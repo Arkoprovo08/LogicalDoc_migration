@@ -3,15 +3,15 @@ import requests
 import psycopg2
 from datetime import datetime
 
-DOCUMENT_FOLDER = r'C:\Users\dghvmuser05\Desktop\DGH FILES\LogicalDoc\PDF'
+DOCUMENT_FOLDER = r'C:\Users\Administrator.DGH\Desktop\dgh\Files'
 API_URL = "http://k8s-ingressn-ingressn-1628ed6eec-bd2bc8d22bd4aed8.elb.ap-south-1.amazonaws.com/documentManagement/uploadDocument"
 
 conn = psycopg2.connect(
-    dbname='ims',
-    user='imsadmin',
-    password='Dghims!2025',
-    host='13.127.174.112',
-    port='5432'
+    dbname='orcl',
+    user='sys',
+    password='Dgh1234',
+    host='192.168.0.133',
+    port='1521'
 )
 cursor = conn.cursor()
 
