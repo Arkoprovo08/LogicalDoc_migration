@@ -17,24 +17,33 @@ conn = oracledb.connect(
 cursor = conn.cursor()
 
 process_name = "Appointment of Auditor"
-regime = "RSC"
-block = "CB-ONN-2005-10"
+regime = "PSC"
 module = "Upstream Data Management"
 financialYear = "2024-2025"
 label = "Scope of Work"
-
 created_by = 5
 
-for file_name in os.listdir(DOCUMENT_FOLDER):
-    if file_name.lower().endswith(".pdf"):
-        file_path = os.path.join(DOCUMENT_FOLDER, file_name)
+cursor.execute("""
+    SELECT a.refid, b.block_name
+    FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR a
+    JOIN PSC.WS_BLOCK_MASTER b
+    ON a.BLOCK_ID = b.BLOCK_ID
+    WHERE b.is_psc = 1
+""")
+records = cursor.fetchall()  
+
+for refid, block in records:
+    file_name = f"{refid}.pdf"
+    file_path = os.path.join(DOCUMENT_FOLDER, file_name)
+
+    if os.path.isfile(file_path):
         try:
             with open(file_path, "rb") as f:
                 files = {
                     'file': (file_name, f, 'application/pdf')
                 }
                 data = {
-                    "businessId": "",  
+                    "businessId": "",
                     "processName": process_name,
                     "regime": regime,
                     "block": block,
@@ -48,29 +57,18 @@ for file_name in os.listdir(DOCUMENT_FOLDER):
                 if response.status_code == 200:
                     doc_id = response.json().get("documentId", None)
                     cursor.execute("""
-                        INSERT INTO global_master.t_document_migration_details 
-                        (document_name, logical_doc_id, is_migrated, created_date, created_by)
-                        VALUES (:1, :2, :3, :4, :5)
-                    """, (
-                        file_name, doc_id, 1, datetime.now(), created_by
-                    ))
+                        UPDATE FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR 
+                        SET logical_doc_id = :1
+                        WHERE REFID = :2
+                    """, (doc_id, refid))
+                    print(f"Updated REFID {refid} with doc ID {doc_id}")
                 else:
-                    cursor.execute("""
-                        INSERT INTO global_master.t_doc_migration_error_logs 
-                        (doc_name, error_message, timestamp)
-                        VALUES (:1, :2, :3)
-                    """, (
-                        file_name, response.text, datetime.now()
-                    ))
+                    print(f"Error uploading {file_name}: {response.status_code} - {response.text}")
 
         except Exception as e:
-            cursor.execute("""
-                INSERT INTO global_master.t_doc_migration_error_logs 
-                (doc_name, error_message, timestamp)
-                VALUES (:1, :2, :3)
-            """, (
-                file_name, str(e), datetime.now()
-            ))
+            print(f"Exception while processing {file_name}: {str(e)}")
+    else:
+        print(f"File not found for REFID {refid}: Expected {file_name}")
 
 conn.commit()
 cursor.close()
