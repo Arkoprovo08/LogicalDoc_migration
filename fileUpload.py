@@ -15,8 +15,13 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
-folder_name = "BGDoc"
-process_name = "Bank Gurantee"
+process_name = "Appointment of Auditor"
+regime = "RSC"
+block = "CB-ONN-2005-10"
+module = "Upstream Data Management"
+financialYear = "2024-2025"
+label = "Scope of Work"
+
 created_by = 5
 
 for file_name in os.listdir(DOCUMENT_FOLDER):
@@ -28,9 +33,13 @@ for file_name in os.listdir(DOCUMENT_FOLDER):
                     'file': (file_name, f, 'application/pdf')
                 }
                 data = {
-                    "folderName": folder_name,
                     "businessId": "",  
-                    "processName": process_name
+                    "processName": process_name,
+                    "regime": regime,
+                    "block": block,
+                    "module": module,
+                    "financialYear": financialYear,
+                    "label": label
                 }
 
                 response = requests.post(API_URL, files=files, data=data)
