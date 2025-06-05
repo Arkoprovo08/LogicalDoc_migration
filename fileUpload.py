@@ -1,82 +1,145 @@
 import os
-import requests
+import sys
 import oracledb
+import requests
 from datetime import datetime
 
-DOCUMENT_FOLDER = r'C:\Users\Administrator.DGH\Desktop\dgh\Files'
-API_URL = "http://k8s-ingressn-ingressn-1628ed6eec-bd2bc8d22bd4aed8.elb.ap-south-1.amazonaws.com/documentManagement/uploadDocument"
+log_file = "migration_output.txt"
+sys.stdout = open(log_file, "w", encoding="utf-8")
+sys.stderr = sys.stdout
 
-# Oracle DB connection
-conn = oracledb.connect(
-    user='sys',
-    password='Dgh1234',
-    dsn='192.168.0.133:1521/orcl',
-    mode=oracledb.SYSDBA
-)
-cursor = conn.cursor()
+DB_USERNAME = "sys"
+DB_PASSWORD = "pwc"
+DB_HOST = "localhost"
+DB_PORT = 1521
+DB_SID = "ORCL"
+DB_DSN = oracledb.makedsn(DB_HOST, DB_PORT, sid=DB_SID)
 
-# Static values
-process_name = "Appointment of Auditor"
-regime = "PSC"
-block = "CB-ONN-2005-10"  # hardcoded
-module = "Upstream Data Management"
-financialYear = "2024-2025"
-label = "Scope of Work"
-created_by = 5
+API_URL = "http://k8s-ingressn-ingressn-1628ed6eec-bd2bc8d22bd4aed8.elb.ap-south-1.amazonaws.com/docs/documentManagement/uploadMultipleDocument"
+FILES_DIR = r"C:\Users\aghosh_511\Desktop\DGH_Files\LogicalDoc Py files\GIT\LogicalDoc_migration\PDF\Uploads"
 
-# Step 1: Get all REFIDs from DB
-cursor.execute("""
-    SELECT REFID 
-    FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR 
-    WHERE logical_doc_id IS NULL
-""")
-refid_rows = cursor.fetchall()
-refids = [row[0] for row in refid_rows]
+def get_financial_year(created_on):
+    if isinstance(created_on, str):
+        created_on = datetime.strptime(created_on, "%Y-%m-%d %H:%M:%S.%f")
+    year = created_on.year
+    return f"{year}-{year + 1}" if created_on.month > 3 else f"{year - 1}-{year}"
 
-# Step 2: Get all PDF files in folder
-pdf_files = [f for f in os.listdir(DOCUMENT_FOLDER) if f.lower().endswith(".pdf")]
+def process_documents(cursor, query, label):
+    cursor.execute(query)
+    rows = cursor.fetchall()
 
-# Step 3: Assign document to REFID sequentially
-assignments = list(zip(refids, pdf_files))
+    for refid, file_name, regime, block, created_on, file_id in rows:
+        file_path = os.path.join(FILES_DIR, file_name)
 
-if len(pdf_files) < len(refids):
-    print(f"[WARNING] Only {len(pdf_files)} files for {len(refids)} REFIDs. Some REFIDs will remain unassigned.")
-elif len(pdf_files) > len(refids):
-    print(f"[WARNING] {len(pdf_files)} files for only {len(refids)} REFIDs. Some files will not be assigned.")
+        print(f"\nProcessing {label}:")
+        print(regime, block, refid, sep='\n')
 
-for refid, file_name in assignments:
-    file_path = os.path.join(DOCUMENT_FOLDER, file_name)
+        if not os.path.exists(file_path):
+            print(f"❌ File not found: {file_path}")
+            continue
 
-    try:
-        with open(file_path, "rb") as f:
-            files = {'file': (file_name, f, 'application/pdf')}
-            data = {
-                "businessId": "",
-                "processName": process_name,
-                "regime": regime,
-                "block": block,
-                "module": module,
-                "financialYear": financialYear,
-                "label": label
-            }
+        files = {'files': open(file_path, 'rb')}
+        data = {
+            'regime': regime,
+            'block': block,
+            'module': 'Operator Contracts and Agreements',
+            'process': 'Appointment of Auditor',
+            'financialYear': get_financial_year(created_on),
+            'referenceNumber': refid,
+            'label': label
+        }
 
+        try:
             response = requests.post(API_URL, files=files, data=data)
+            print(f"\n--- API response for {file_name} ---\n{response.text}\n")
+            response.raise_for_status()
 
-            if response.status_code == 200:
-                doc_id = response.json().get("documentId", None)
-                cursor.execute("""
-                    UPDATE FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR 
-                    SET logical_doc_id = :1
-                    WHERE REFID = :2
-                """, (doc_id, refid))
-                print(f"[SUCCESS] REFID {refid} -> doc ID {doc_id}")
+            response_json = response.json()
+            response_objects = response_json.get("responseObject", [])
+
+            logical_doc_id = None
+            for item in response_objects:
+                if item.get("fileName") == file_name:
+                    logical_doc_id = item.get("docId")
+                    break
+
+            if logical_doc_id:
+                print(f"✅ Uploaded: {file_name} ➜ docId: {logical_doc_id}")
+                update_sql = "UPDATE CMS_FILES SET LOGICAL_DOC_ID = :1 WHERE FILE_ID = :2"
+                cursor.execute(update_sql, (logical_doc_id, file_id))
             else:
-                print(f"[ERROR] API upload failed for {file_name}: {response.status_code} - {response.text}")
+                print(f"⚠️ No docId found for {file_name} in responseObject")
+        except Exception as upload_err:
+            print(f"❌ Upload failed for {file_name}: {upload_err}")
 
-    except Exception as e:
-        print(f"[EXCEPTION] Failed processing {file_name} for REFID {refid}: {str(e)}")
+try:
+    conn = oracledb.connect(
+        user=DB_USERNAME,
+        password=DB_PASSWORD,
+        dsn=DB_DSN,
+        mode=oracledb.SYSDBA
+    )
+    cursor = conn.cursor()
+    print("✅ Connected to Oracle database.")
 
-# Commit changes and close connection
-conn.commit()
-cursor.close()
-conn.close()
+    # Scope of Work
+    query_scope = """
+        SELECT 
+            faao.REFID,
+            cf.FILE_NAME,
+            faao.BLOCKCATEGORY,
+            faao.BLOCKNAME,
+            faao.CREATED_ON,
+            cf.FILE_ID
+        FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR faao
+        JOIN FRAMEWORK01.CMS_MASTER_FILEREF cmf ON faao.SCOPE_WORK = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILE_REF cfr ON cfr.REF_ID = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
+    """
+    process_documents(cursor, query_scope, "Scope of Work")
+
+    # Upload OCR
+    query_ocr = """
+        SELECT 
+            faao.REFID,
+            cf.FILE_NAME,
+            faao.BLOCKCATEGORY,
+            faao.BLOCKNAME,
+            faao.CREATED_ON,
+            cf.FILE_ID
+        FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR faao
+        JOIN FRAMEWORK01.CMS_MASTER_FILEREF cmf ON faao.UPLOAD_OCR = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILE_REF cfr ON cfr.REF_ID = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
+    """
+    process_documents(cursor, query_ocr, "Upload OCR (if Yes is selected in S No. 26)")
+
+    # MC Approved Auditors
+    query_mc = """
+        SELECT 
+            faao.REFID,
+            cf.FILE_NAME,
+            faao.BLOCKCATEGORY,
+            faao.BLOCKNAME,
+            faao.CREATED_ON,
+            cf.FILE_ID
+        FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR faao
+        JOIN FRAMEWORK01.CMS_MASTER_FILEREF cmf ON faao.UPLOAD_MC = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILE_REF cfr ON cfr.REF_ID = cmf.FILEREF
+        JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
+    """
+    process_documents(cursor, query_mc, "MC Approved Auditors")
+
+    conn.commit()
+    print("✅ All files processed and committed to database.")
+
+    cursor.close()
+    conn.close()
+    print("✅ Database connection closed.")
+
+except Exception as db_err:
+    print(f"❌ Database error: {db_err}")
+
+# Restore terminal output (optional cleanup)
+sys.stdout.close()
+sys.stdout = sys.__stdout__

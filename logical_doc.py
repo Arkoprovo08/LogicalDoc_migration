@@ -11,7 +11,7 @@ DB_SID = "ORCL"
 DB_DSN = oracledb.makedsn(DB_HOST, DB_PORT, sid=DB_SID)
 
 API_URL = "http://k8s-ingressn-ingressn-1628ed6eec-bd2bc8d22bd4aed8.elb.ap-south-1.amazonaws.com/docs/documentManagement/uploadMultipleDocument"
-FILES_DIR = r"C:\Users\Administrator.DGH\Desktop\dgh\Files\CMS\Uploads"
+FILES_DIR = r"C:\Users\aghosh_511\Desktop\DGH_Files\LogicalDoc Py files\GIT\LogicalDoc_migration\PDF\Uploads"
 
 def get_financial_year(created_on):
     if isinstance(created_on, str):
