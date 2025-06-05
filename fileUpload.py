@@ -139,7 +139,6 @@ try:
         SELECT 
             faao.REFID,
             cf.FILE_NAME,
-            cmf.fileref,
             faao.BLOCKCATEGORY,
             faao.BLOCKNAME,
             faao.CREATED_ON,
@@ -150,7 +149,7 @@ try:
         JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
         WHERE cmf.ACTIVE = 1
     """
-    process_documents(cursor, query_ocr_no, "OCR Unaivalable")
+    process_documents(cursor, query_ocr_no, "OCR Unavailable")
     
     #Upload Additional Documents
     
