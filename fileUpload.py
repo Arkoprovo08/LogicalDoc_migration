@@ -24,7 +24,7 @@ def get_financial_year(created_on):
     year = created_on.year
     return f"{year}-{year + 1}" if created_on.month > 3 else f"{year - 1}-{year}"
 
-def process_documents(cursor, query, label):
+def process_documents(cursor, query, label, label_id):
     cursor.execute(query)
     rows = cursor.fetchall()
 
@@ -65,8 +65,8 @@ def process_documents(cursor, query, label):
 
             if logical_doc_id:
                 print(f"✅ Uploaded: {file_name} ➜ docId: {logical_doc_id}")
-                update_sql = "UPDATE FRAMEWORK01.CMS_FILES SET LOGICAL_DOC_ID = :1 WHERE FILE_ID = :2"
-                cursor.execute(update_sql, (logical_doc_id, file_id))
+                update_sql = "UPDATE FRAMEWORK01.CMS_FILES SET LOGICAL_DOC_ID = :1, LABEL_ID = :2 WHERE FILE_ID = :3"
+                cursor.execute(update_sql, (logical_doc_id,label_id, file_id))
             else:
                 print(f"⚠️ No docId found for {file_name} in responseObject")
         except Exception as upload_err:
@@ -97,7 +97,7 @@ try:
         JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
         WHERE cmf.ACTIVE = 1
     """
-    process_documents(cursor, query_scope, "Scope of Work")
+    process_documents(cursor, query_scope, "Scope of Work",66)
 
     # Upload OCR
     query_ocr = """
@@ -114,7 +114,7 @@ try:
         JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
         WHERE cmf.ACTIVE = 1
     """
-    process_documents(cursor, query_ocr, "Upload OCR (if Yes is selected in S No. 26)")
+    process_documents(cursor, query_ocr, "Upload OCR (if Yes is selected in S No. 26)",63)
 
     # MC Approved Auditors
     query_mc = """
@@ -131,7 +131,7 @@ try:
         JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
         WHERE cmf.ACTIVE = 1
     """
-    process_documents(cursor, query_mc, "MC Approved Auditors")
+    process_documents(cursor, query_mc, "MC Approved Auditors",65)
 
     #Upload OCR Not Available
     
@@ -149,22 +149,20 @@ try:
         JOIN FRAMEWORK01.CMS_FILES cf ON cf.FILE_ID = cfr.FILE_ID
         WHERE cmf.ACTIVE = 1
     """
-    process_documents(cursor, query_ocr_no, "OCR Unavailable")
+    process_documents(cursor, query_ocr_no, "OCR Unavailable",235)
     
     #Upload Additional Documents
     
     query_additional = """
         SELECT FAAO.REFID ,CF.FILE_NAME ,faao.BLOCKCATEGORY,faao.BLOCKNAME,faao.CREATED_ON,cfr.FILE_ID
         FROM FRAMEWORK01.FORM_APPOINTMENT_AUDITOR_OPR faao 
-        JOIN FRAMEWORK01.CMS_MASTER_FILEREF cmf 
-        ON FAAO.REFID  = CMF.REFID 
         JOIN FRAMEWORK01.CMS_FILE_REF cfr 
-        ON CFR.REF_ID  = CMF.FILEREF 
+        ON CFR.REF_ID = FAAO.FILEREF
         JOIN FRAMEWORK01.CMS_FILES cf 
-        ON CF.FILE_ID = CFR.FILE_ID 
-        WHERE cmf.ACTIVE = 1
+        ON CFR.FILE_ID = CF.FILE_ID
+        WHERE CFR.IS_ACTIVE =1
     """
-    process_documents(cursor, query_additional, "Upload Additional Documents")    
+    process_documents(cursor, query_additional, "Upload Additional Documents",69)    
     
     conn.commit()
     print("✅ All files processed and committed to database.")
